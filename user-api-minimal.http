@@ -1,0 +1,23 @@
+﻿@user-api-minimal_HostAddress = https://localhost:7150
+
+POST {{user-api-minimal_HostAddress}}/users
+Content-Type: application/json
+
+  {
+    "id": "testId2",
+    "accessToken": "testAccessToken",
+    "firstName": "first2",
+    "lastName": "last2",
+    "email": "test2@test.com",
+    "marketingConsent": true
+  }
+
+###
+
+GET {{user-api-minimal_HostAddress}}/users
+
+###
+
+GET {{user-api-minimal_HostAddress}}/users/testId2
+
+###
