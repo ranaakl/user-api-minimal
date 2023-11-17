@@ -4,12 +4,10 @@ POST {{user-api-minimal_HostAddress}}/users
 Content-Type: application/json
 
   {
-    "id": "testId2",
-    "accessToken": "testAccessToken",
-    "firstName": "first2",
-    "lastName": "last2",
-    "email": "test2@test.com",
-    "marketingConsent": true
+    "firstName": "Michael",
+    "lastName": "Knight",
+    "email": "info@saqaya.com",
+    "marketingConsent": false
   }
 
 ###
@@ -17,7 +15,7 @@ Content-Type: application/json
 GET {{user-api-minimal_HostAddress}}/users
 
 ###
-
-GET {{user-api-minimal_HostAddress}}/users/testId2
+// GET {{user-api-minimal_HostAddress}}/users/{id}
+GET {{user-api-minimal_HostAddress}}/users/7B5BLbq/V/lCXO3DUwaKtdeqSO4=
 
 ###
