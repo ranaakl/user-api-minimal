@@ -1,6 +1,6 @@
 ﻿@user-api-minimal_HostAddress = https://localhost:7150
 
-POST {{user-api-minimal_HostAddress}}/users
+POST {{user-api-minimal_HostAddress}}/user
 Content-Type: application/json
 
   {
@@ -12,10 +12,14 @@ Content-Type: application/json
 
 ###
 
-GET {{user-api-minimal_HostAddress}}/users
+GET {{user-api-minimal_HostAddress}}/user
 
 ###
-// GET {{user-api-minimal_HostAddress}}/users/{id}
-GET {{user-api-minimal_HostAddress}}/users/7B5BLbq/V/lCXO3DUwaKtdeqSO4=
+// GET {{user-api-minimal_HostAddress}}/user/{id}
+GET {{user-api-minimal_HostAddress}}/user/7B5BLbq/V/lCXO3DUwaKtdeqSO4=
+
+###
+
+GET {{user-api-minimal_HostAddress}}/user/Jwt/demo
 
 ###

@@ -1,30 +1,67 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using System.Security.Cryptography;
+using System.Text;
 using user_api_minimal.Models;
+using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<UserDB>(opt => opt.UseInMemoryDatabase("UserDB"));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultForbidScheme = JwtBearerDefaults.AuthenticationScheme;
+}).AddJwtBearer(o =>
+{
+    o.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])),
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = false,
+        ValidateIssuerSigningKey = true,
+    };
+});
+builder.Services.AddAuthorization();
 var app = builder.Build();
 
-var users = app.MapGroup("/users");
+var user = app.MapGroup("/user");
 
-users.MapGet("/", GetAllUsers);
+user.MapGet("/", GetAllUsers);
 
 /**
  * A double asterisk is added before the id parameter which is called a catch-all parameter
  * The catch-all parameter escapes the appropriate characters when the route is used to generate a URL,
  * including path separator (/) characters.
  */
-users.MapGet("/{**id}", GetUser);
+user.MapGet("/{**id}", GetUser).RequireAuthorization();
 
-users.MapPost("/", CreateUser);
+user.MapPost("/", CreateUser);
+
+user.MapGet("/Jwt/demo", () => "Hello World!").RequireAuthorization();
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.Run();
 
 static async Task<IResult> GetAllUsers(UserDB db)
 {
     return TypedResults.Ok(await db.Users.ToArrayAsync());
+}
+
+static string isUserExisting(string id, UserDB db)
+{
+    User user = db.Users.Find(id);
+
+    return user != null ? user.Id : null ;
 }
 
 static async Task<IResult> GetUser(string id, UserDB db)
@@ -35,7 +72,7 @@ static async Task<IResult> GetUser(string id, UserDB db)
             : TypedResults.NotFound();
 }
 
-static async Task<IResult> CreateUser(User user, UserDB db)
+async Task<IResult> CreateUser(User user, UserDB db)
 {
 
     if(user.Email != null && user.Email.Length > 0)
@@ -47,7 +84,7 @@ static async Task<IResult> CreateUser(User user, UserDB db)
     db.Users.Add(user);
     await db.SaveChangesAsync();
 
-    return TypedResults.Created($"/users/{user.Id}", user);
+    return createAccessToken(user, db);
 }
 
 static string GenerateUserId(string email)
@@ -65,3 +102,44 @@ static string GenerateUserId(string email)
 
     return encodedUserId;
 }
+
+IResult createAccessToken(User user, UserDB db)
+{
+    string userId = isUserExisting(user.Id, db);
+    // TODO: replace with Id from DB
+    if (userId != null && user.Id == userId)
+    {
+        var issuer = builder.Configuration["Jwt:Issuer"];
+        var audience = builder.Configuration["Jwt:Audience"];
+        var key = Encoding.ASCII.GetBytes(builder.Configuration["Jwt:Key"]);
+        var tokenDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(new[]
+            {
+                    new Claim("Id", Guid.NewGuid().ToString()),
+                    new Claim(JwtRegisteredClaimNames.Sub, user.FirstName),
+                    new Claim(JwtRegisteredClaimNames.Email, user.Email),
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                }),
+            Expires = DateTime.UtcNow.AddMinutes(5),
+            Issuer = issuer,
+            Audience = audience,
+            SigningCredentials = new SigningCredentials
+            (new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+        };
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        var jwtToken = tokenHandler.WriteToken(token);
+        var stringToken = tokenHandler.WriteToken(token);
+        UserJwtAuth auth = new()
+        {
+            Id = user.Id,
+            AccessToken = stringToken
+        };
+
+        return Results.Ok(auth);
+    }
+    return Results.Unauthorized();
+
+}
+
