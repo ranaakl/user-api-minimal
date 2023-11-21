@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
 
 var builder = WebApplication.CreateBuilder(args);
+//In-memory User database definition
 builder.Services.AddDbContext<UserDB>(opt => opt.UseInMemoryDatabase("UserDB"));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 builder.Services.AddAuthentication(options =>
