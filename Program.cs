@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Cryptography;
@@ -30,63 +29,74 @@ builder.Services.AddAuthentication(options =>
     };
 });
 builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
 var user = app.MapGroup("/user");
 
-user.MapGet("/", GetAllUsers);
-
 /**
- * A double asterisk is added before the id parameter which is called a catch-all parameter
- * The catch-all parameter escapes the appropriate characters when the route is used to generate a URL,
- * including path separator (/) characters.
+ * A double asterisk is added before the id parameter as it might contain a slash.
+ * This is called a catch-all parameter which escapes the appropriate characters
+ * when the route is used to generate a URL, including path separator (/) characters.
  */
 user.MapGet("/{**id}", GetUser).RequireAuthorization();
 
 user.MapPost("/", CreateUser);
-
-user.MapGet("/Jwt/demo", () => "Hello World!").RequireAuthorization();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.Run();
 
-static async Task<IResult> GetAllUsers(UserDB db)
-{
-    return TypedResults.Ok(await db.Users.ToArrayAsync());
-}
-
-static string isUserExisting(string id, UserDB db)
-{
-    User user = db.Users.Find(id);
-
-    return user != null ? user.Id : null ;
-}
-
+/**
+ * This method retrieves a user from the database using the given id 
+ */
 static async Task<IResult> GetUser(string id, UserDB db)
 {
-    return await db.Users.FindAsync(id)
-        is User user
-            ? TypedResults.Ok(user)
-            : TypedResults.NotFound();
+    if (await db.Users.FindAsync(id) is User user)
+    {
+        if (!user.MarketingConsent)
+        {
+            // user email is set to null in case of MarketingConsent is false
+            // to remove the email property.
+            user.Email = null;
+        }
+        return TypedResults.Ok(user);
+    }
+    return TypedResults.NotFound();
 }
 
-async Task<IResult> CreateUser(User user, UserDB db)
+/**
+ * This method is used persists a user in the database
+ */
+async Task<IResult> CreateUser(UserDTO userDTO, UserDB db)
 {
+    //user to be persisted in the database
+    User user = new();
 
-    if(user.Email != null && user.Email.Length > 0)
+    //The email has to have a value as it is used to generate the id
+    if(userDTO.Email != null && userDTO.Email.Length > 0)
     {
-        string id = GenerateUserId(user.Email);
+        string id = GenerateUserId(userDTO.Email);
+        //Filling up the user object from the user DTO
         user.Id = id;
+        user.FirstName = userDTO.FirstName;
+        user.LastName = userDTO.LastName;
+        user.Email = userDTO.Email;
+        user.MarketingConsent = userDTO.MarketingConsent;
     }
-        
+    
+    //saving the user object to the database
     db.Users.Add(user);
     await db.SaveChangesAsync();
 
+    //creating the JWT access token for the saved user and returning the id and accessToken.
     return createAccessToken(user, db);
 }
 
+/**
+ * This method generates the user's id from the email address
+ */
 static string GenerateUserId(string email)
 {
     string encodedUserId = "";
@@ -99,14 +109,17 @@ static string GenerateUserId(string email)
         var idHash = hmacsha1.ComputeHash(emailBytes);
         encodedUserId = Convert.ToBase64String(idHash);
     }
-
     return encodedUserId;
 }
 
+/**
+ * This method creates the JWT access token if the given user exists.
+ * It returns a Json object of the id and accessToken created else returns 401 unauthorized
+ */
 IResult createAccessToken(User user, UserDB db)
 {
     string userId = isUserExisting(user.Id, db);
-    // TODO: replace with Id from DB
+
     if (userId != null && user.Id == userId)
     {
         var issuer = builder.Configuration["Jwt:Issuer"];
@@ -121,6 +134,7 @@ IResult createAccessToken(User user, UserDB db)
                     new Claim(JwtRegisteredClaimNames.Email, user.Email),
                     new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 }),
+            //sets the accessToken to expire after 5 minutes
             Expires = DateTime.UtcNow.AddMinutes(5),
             Issuer = issuer,
             Audience = audience,
@@ -129,7 +143,6 @@ IResult createAccessToken(User user, UserDB db)
         };
         var tokenHandler = new JwtSecurityTokenHandler();
         var token = tokenHandler.CreateToken(tokenDescriptor);
-        var jwtToken = tokenHandler.WriteToken(token);
         var stringToken = tokenHandler.WriteToken(token);
         UserJwtAuth auth = new()
         {
@@ -137,9 +150,18 @@ IResult createAccessToken(User user, UserDB db)
             AccessToken = stringToken
         };
 
-        return Results.Ok(auth);
+        return TypedResults.Ok(auth);
     }
-    return Results.Unauthorized();
-
+    return TypedResults.Unauthorized();
 }
 
+/**
+ * This method is used to check if the user with the given id exists.
+ * returns the user's id if the user exists else returns null
+ */
+static string isUserExisting(string id, UserDB db)
+{
+    User user = db.Users.Find(id);
+
+    return user != null ? user.Id : null;
+}
